@@ -1,6 +1,6 @@
 // yaSchemeInCpp.cpp : This file contains the 'main' function. Program execution begins and ends there.
 
-#include <stdio.h>
+#include <cstdio>
 #include <tchar.h>
 
 #include <iostream>
@@ -9,58 +9,60 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <variant>
+#include <optional>
+#include <cstdint>
+
 using namespace std;
 
-
-
-
-// return given mumber as a string
-string str(__int64 n) { ostringstream os; os << n; return os.str(); }
+// return given number as a string
+[[nodiscard]] string str(int64_t n) {
+    ostringstream os;
+    os << n;
+    return os.str();
+}
 
 // return true iff given character is '0'..'9'
-bool isdig(char c) { return isdigit(static_cast<unsigned char>(c)) != 0; }
-
+[[nodiscard]] bool isdig(char c) {
+    return isdigit(static_cast<unsigned char>(c)) != 0;
+}
 
 ////////////////////// cell
 
-enum cell_type { Symbol, Number, List, Proc, Lambda };
+enum class cell_type { Symbol, Number, List, Proc, Lambda };
 
-class CCELL
-{
-    cell_type tag;
-    union {
-        int a;
-        float b;
-    };
-};
+//class CCELL {
+//    cell_type tag;
+//    std::variant<int, float> value;
+//};
 
 struct environment; // forward declaration; cell and environment reference each other
 
 // a variant that can hold any kind of lisp value
 struct cell {
-    typedef cell(*proc_type)(const  vector<cell>&);
-    typedef  vector<cell>::const_iterator iter;
-    typedef  map< string, cell> map;
+    using proc_type = cell(*)(const vector<cell>&);
+    using iter = vector<cell>::const_iterator;
+    using map_type = map<string, cell>;
 
     cell_type type;
     string val;
     vector<cell> list;
     proc_type proc;
-    environment* env;
+    environment *  env;
 
-    cell(cell_type type = Symbol) : type(type), env(0) {}
+    explicit cell(cell_type type = cell_type::Symbol) : type(type) {}
 
-    cell(cell_type type, const  string& val) : type(type), val(val), env(0) {}
+    cell(cell_type type, const  string& val) : type(type), val(val) {}
 
-    cell(proc_type proc) : type(Proc), proc(proc), env(0) {}
+    explicit cell(proc_type proc) : type(cell_type::Proc), proc(proc) {}
 };
 
-typedef  vector<cell> cells;
-typedef cells::const_iterator cellit;
+using cells = vector<cell>;
+using cellit = cells::const_iterator;
 
-const cell false_sym(Symbol, "#f");
-const cell true_sym(Symbol, "#t"); // anything that isn't false_sym is true
-const cell nil(Symbol, "nil");
+inline const cell false_sym(cell_type::Symbol, "#f");
+inline const cell true_sym(cell_type::Symbol, "#t"); // anything that isn't false_sym is true
+inline const cell nil(cell_type::Symbol, "nil");
 
 
 ////////////////////// environment
@@ -68,23 +70,24 @@ const cell nil(Symbol, "nil");
 // a dictionary that (a) associates symbols with cells, and
 // (b) can chain to an "outer" dictionary
 struct environment {
-    environment(environment* outer = 0) : outer_(outer) {}
+    explicit environment(environment* outer = nullptr)
+        : outer_(outer) {
+    }
 
     environment(const cells& parms, const cells& args, environment* outer)
         : outer_(outer)
     {
-        cellit a = args.begin();
-        for (cellit p = parms.begin(); p != parms.end(); ++p)
+        auto a = args.begin();
+        for (auto p = parms.begin(); p != parms.end(); ++p)
             env_[p->val] = *a++;
     }
 
     // map a variable name onto a cell
-    typedef  map< string, cell> map;
+    using map_type = map<string, cell>;
 
     // return a reference to the innermost environment where 'var' appears
-    map& find(const  string& var)
-    {
-        if (env_.find(var) != env_.end())
+    [[nodiscard]] map_type& find(const  string& var) {
+        if (auto it = env_.find(string(var)); it != env_.end())
             return env_; // the symbol exists in this environment
         if (outer_)
             return outer_->find(var); // attempt to find the symbol in some "outer" env
@@ -93,80 +96,75 @@ struct environment {
     }
 
     // return a reference to the cell associated with the given symbol 'var'
-    cell& operator[] (const  string& var)
-    {
-        return env_[var];
+    [[nodiscard]] cell& operator[](const  string& var) {
+        return env_[string(var)];
     }
 
 private:
-    map env_; // inner symbol->cell mapping
-    environment* outer_; // next adjacent outer env, or 0 if there are no further environments
+    map_type env_; // inner symbol->cell mapping
+    environment* outer_; // next adjacent outer env, or nullopt if there are no further environments
 };
 
 
 ////////////////////// built-in primitive procedures
 
-cell proc_add(const cells& c)
-{
-    __int64 n(_atoi64(c[0].val.c_str()));
-    for (cellit i = c.begin() + 1; i != c.end(); ++i) n += _atoi64(i->val.c_str());
-    return cell(Number, str(n));
+[[nodiscard]] cell proc_add(const cells& c) {
+    int64_t n(stoll(c[0].val));
+    for (auto i = c.begin() + 1; i != c.end(); ++i)
+        n += stoll(i->val);
+    return cell(cell_type::Number, str(n));
 }
 
-cell proc_sub(const cells& c)
-{
-    __int64 n(_atoi64(c[0].val.c_str()));
-    for (cellit i = c.begin() + 1; i != c.end(); ++i) n -= _atoi64(i->val.c_str());
-    return cell(Number, str(n));
+[[nodiscard]] cell proc_sub(const cells& c) {
+    int64_t n(stoll(c[0].val));
+    for (auto i = c.begin() + 1; i != c.end(); ++i)
+        n -= stoll(i->val);
+    return cell(cell_type::Number, str(n));
 }
 
-cell proc_mul(const cells& c)
-{
-    __int64 n(1);
-    for (cellit i = c.begin(); i != c.end(); ++i) n *= _atoi64(i->val.c_str());
-    return cell(Number, str(n));
+[[nodiscard]] cell proc_mul(const cells& c) {
+    int64_t n(1);
+    for (const auto& i : c)
+        n *= stoll(i.val);
+    return cell(cell_type::Number, str(n));
 }
 
-cell proc_div(const cells& c)
-{
-    __int64 n(_atoi64(c[0].val.c_str()));
-    for (cellit i = c.begin() + 1; i != c.end(); ++i) n /= _atoi64(i->val.c_str());
-    return cell(Number, str(n));
+[[nodiscard]] cell proc_div(const cells& c) {
+    int64_t n(stoll(c[0].val));
+    for (auto i = c.begin() + 1; i != c.end(); ++i)
+        n /= stoll(i->val);
+    return cell(cell_type::Number, str(n));
 }
 
-cell proc_greater(const cells& c)
-{
-    __int64 n(_atoi64(c[0].val.c_str()));
-    for (cellit i = c.begin() + 1; i != c.end(); ++i)
-        if (n <= _atoi64(i->val.c_str()))
+[[nodiscard]] cell proc_greater(const cells& c) {
+    int64_t n(stoll(c[0].val));
+    for (auto i = c.begin() + 1; i != c.end(); ++i)
+        if (n <= stoll(i->val))
             return false_sym;
     return true_sym;
 }
 
-cell proc_less(const cells& c)
-{
-    __int64 n(_atoi64(c[0].val.c_str()));
-    for (cellit i = c.begin() + 1; i != c.end(); ++i)
-        if (n >= _atoi64(i->val.c_str()))
+[[nodiscard]] cell proc_less(const cells& c) {
+    int64_t n(stoll(c[0].val));
+    for (auto i = c.begin() + 1; i != c.end(); ++i)
+        if (n >= stoll(i->val))
             return false_sym;
     return true_sym;
 }
 
-cell proc_less_equal(const cells& c)
-{
-    __int64 n(_atoi64(c[0].val.c_str()));
-    for (cellit i = c.begin() + 1; i != c.end(); ++i)
-        if (n > _atoi64(i->val.c_str()))
+[[nodiscard]] cell proc_less_equal(const cells& c) {
+    int64_t n(stoll(c[0].val));
+    for (auto i = c.begin() + 1; i != c.end(); ++i)
+        if (n > stoll(i->val))
             return false_sym;
     return true_sym;
 }
 
-cell proc_length(const cells& c) { return cell(Number, str(c[0].list.size())); }
-cell proc_nullp(const cells& c) { return c[0].list.empty() ? true_sym : false_sym; }
-cell proc_car(const cells& c) { return c[0].list[0]; }
+[[nodiscard]] cell proc_length(const cells& c) { return cell(cell_type::Number, str(c[0].list.size())); }
+[[nodiscard]] cell proc_nullp(const cells& c) { return c[0].list.empty() ? true_sym : false_sym; }
+[[nodiscard]] cell proc_car(const cells& c) { return c[0].list[0]; }
 
-cell proc_cdr(const cells& c)
-{
+[[nodiscard]] cell proc_cdr(const cells& c) {
     if (c[0].list.size() < 2)
         return nil;
     cell result(c[0]);
@@ -174,66 +172,70 @@ cell proc_cdr(const cells& c)
     return result;
 }
 
-cell proc_append(const cells& c)
-{
-    cell result(List);
+[[nodiscard]] cell proc_append(const cells& c) {
+    cell result(cell_type::List);
     result.list = c[0].list;
-    for (cellit i = c[1].list.begin(); i != c[1].list.end(); ++i) result.list.push_back(*i);
+    result.list.insert(result.list.end(), c[1].list.begin(), c[1].list.end());
     return result;
 }
 
-cell proc_cons(const cells& c)
-{
-    cell result(List);
+[[nodiscard]] cell proc_cons(const cells& c) {
+    cell result(cell_type::List);
     result.list.push_back(c[0]);
-    for (cellit i = c[1].list.begin(); i != c[1].list.end(); ++i) result.list.push_back(*i);
+    result.list.insert(result.list.end(), c[1].list.begin(), c[1].list.end());
     return result;
 }
 
-cell proc_list(const cells& c)
-{
-    cell result(List); result.list = c;
+[[nodiscard]] cell proc_list(const cells& c) {
+    cell result(cell_type::List); result.list = c;
     return result;
 }
 
-// define the bare minimum set of primintives necessary to pass the unit tests
-void add_globals(environment& env)
-{
-    env["nil"] = nil;   env["#f"] = false_sym;  env["#t"] = true_sym;
-    env["append"] = cell(&proc_append);   env["car"] = cell(&proc_car);
-    env["cdr"] = cell(&proc_cdr);      env["cons"] = cell(&proc_cons);
-    env["length"] = cell(&proc_length);   env["list"] = cell(&proc_list);
-    env["null?"] = cell(&proc_nullp);    env["+"] = cell(&proc_add);
-    env["-"] = cell(&proc_sub);      env["*"] = cell(&proc_mul);
-    env["/"] = cell(&proc_div);      env[">"] = cell(&proc_greater);
-    env["<"] = cell(&proc_less);     env["<="] = cell(&proc_less_equal);
+// define the bare minimum set of primitives necessary to pass the unit tests
+void add_globals(environment& env) {
+    env["nil"] = nil;
+    env["#f"] = false_sym;
+    env["#t"] = true_sym;
+    env["append"] = cell(&proc_append);
+    env["car"] = cell(&proc_car);
+    env["cdr"] = cell(&proc_cdr);
+    env["cons"] = cell(&proc_cons);
+    env["length"] = cell(&proc_length);
+    env["list"] = cell(&proc_list);
+    env["null?"] = cell(&proc_nullp);
+    env["+"] = cell(&proc_add);
+    env["-"] = cell(&proc_sub);
+    env["*"] = cell(&proc_mul);
+    env["/"] = cell(&proc_div);
+    env[">"] = cell(&proc_greater);
+    env["<"] = cell(&proc_less);
+    env["<="] = cell(&proc_less_equal);
 }
 
 
 ////////////////////// eval
 
-cell eval(cell x, environment* env)
-{
-    if (x.type == Symbol)
+ cell eval(cell x, environment* env) {
+    if (x.type == cell_type::Symbol)
         return env->find(x.val)[x.val];
-    if (x.type == Number)
+    if (x.type == cell_type::Number)
         return x;
     if (x.list.empty())
         return nil;
-    if (x.list[0].type == Symbol) {
+    if (x.list[0].type == cell_type::Symbol) {
         if (x.list[0].val == "quote")       // (quote exp)
             return x.list[1];
-        if (x.list[0].val == "if")          // (if test conseq [alt])
-            return eval(eval(x.list[1], env).val == "#f" ? (x.list.size() < 4 ? nil : x.list[3]) : x.list[2], env);
+        if (x.list[0].val == "if") {        // (if test conseq [alt])
+            auto test_result = eval(x.list[1], env);
+            return eval(test_result.val == "#f" ?
+                (x.list.size() < 4 ? nil : x.list[3]) : x.list[2], env);
+        }
         if (x.list[0].val == "set!")        // (set! var exp)
             return env->find(x.list[1].val)[x.list[1].val] = eval(x.list[2], env);
         if (x.list[0].val == "define")      // (define var exp)
             return (*env)[x.list[1].val] = eval(x.list[2], env);
         if (x.list[0].val == "lambda") {    // (lambda (var*) exp)
-            x.type = Lambda;
-            // keep a reference to the environment that exists now (when the
-            // lambda is being defined) because that's the outer environment
-            // we'll need to use when the lambda is executed
+            x.type = cell_type::Lambda;
             x.env = env;
             return x;
         }
@@ -246,32 +248,24 @@ cell eval(cell x, environment* env)
     // (proc exp*)
     cell proc(eval(x.list[0], env));
     cells exps;
-    for (cell::iter exp = x.list.begin() + 1; exp != x.list.end(); ++exp)
+    for (auto exp = x.list.begin() + 1; exp != x.list.end(); ++exp)
         exps.push_back(eval(*exp, env));
-    if (proc.type == Lambda) {
-        // Create an environment for the execution of this lambda function
-        // where the outer environment is the one that existed* at the time
-        // the lambda was defined and the new inner associations are the
-        // parameter names with the given arguments.
-        // *Although the environmet existed at the time the lambda was defined
-        // it wasn't necessarily complete - it may have subsequently had
-        // more symbols defined in that environment.
+    if (proc.type == cell_type::Lambda) {
         return eval(/*body*/proc.list[2], new environment(/*parms*/proc.list[1].list, /*args*/exps, proc.env));
     }
-    else if (proc.type == Proc)
+    else if (proc.type == cell_type::Proc)
         return proc.proc(exps);
-
-    cout << "not a function\n";
-    exit(1);
+    else {
+        cout << "not a function\n";
+        exit(1);
+    }
 }
 
 
 ////////////////////// parse, read and user interaction
 
-// convert given string to list of tokens
-list< string> tokenize(const  string& str)
-{
-    list< string> tokens;
+[[nodiscard]] list<string> tokenize(string str) {
+    list<string> tokens;
     const char* s = str.c_str();
     while (*s) {
         while (*s == ' ')
@@ -289,21 +283,21 @@ list< string> tokenize(const  string& str)
     return tokens;
 }
 
-// numbers become Numbers; every other token is a Symbol
-cell atom(const  string& token)
-{
+[[nodiscard]] cell atom(const  string& token) {
     if (isdig(token[0]) || (token[0] == '-' && isdig(token[1])))
-        return cell(Number, token);
-    return cell(Symbol, token);
+        return cell(cell_type::Number, token);
+    return cell(cell_type::Symbol, token);
 }
 
-// return the Lisp expression in the given tokens
-cell read_from(list< string>& tokens)
-{
-    const  string token(tokens.front());
+[[nodiscard]] cell read_from(list<string>& tokens) {
+    if (tokens.empty()) {
+        cout << "unexpected EOF while reading\n";
+        exit(1);
+    }
+    string token = tokens.front();
     tokens.pop_front();
     if (token == "(") {
-        cell c(List);
+        cell c(cell_type::List);
         while (tokens.front() != ")")
             c.list.push_back(read_from(tokens));
         tokens.pop_front();
@@ -313,27 +307,25 @@ cell read_from(list< string>& tokens)
         return atom(token);
 }
 
-// return the Lisp expression represented by the given string
-cell read(const  string& s)
-{
-    list< string> tokens(tokenize(s));
+[[nodiscard]] cell read(string s) {
+    list<string> tokens = tokenize(s);
+    if (tokens.empty())
+        return nil;
     return read_from(tokens);
 }
 
-// convert given cell to a Lisp-readable string
-string to_string(const cell& exp)
-{
-    if (exp.type == List) {
+[[nodiscard]] string to_string(const cell& exp) {
+    if (exp.type == cell_type::List) {
         string s("(");
-        for (cell::iter e = exp.list.begin(); e != exp.list.end(); ++e)
+        for (auto e = exp.list.begin(); e != exp.list.end(); ++e)
             s += to_string(*e) + ' ';
         if (s[s.size() - 1] == ' ')
             s.erase(s.size() - 1);
         return s + ')';
     }
-    else if (exp.type == Lambda)
+    else if (exp.type == cell_type::Lambda)
         return "<Lambda>";
-    else if (exp.type == Proc)
+    else if (exp.type == cell_type::Proc)
         return "<Proc>";
     return exp.val;
 }
@@ -348,10 +340,11 @@ void repl(const  string& prompt, environment* env)
     }
 }
 
-int main()
-{
-    environment global_env; add_globals(global_env);
+int main() {
+    environment global_env;
+    add_globals(global_env);
     repl(">>> ", &global_env);
+    return 0;
 }
 
 
